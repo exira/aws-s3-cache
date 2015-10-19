@@ -1,4 +1,14 @@
-﻿Project Nami Blob Cache -- Installation
+# aws-s3-cache [![NuGet Status](http://img.shields.io/nuget/v/Exira.AwsS3Cache.svg?style=flat)](https://www.nuget.org/packages/Exira.AwsS3Cache/)
+
+## Exira.AwsS3Cache
+
+Exira.EventStore.Owin is IIS module which reads cached objects from AWS S3 and quickly serves them to end users
+
+### Cloning
+
+```git clone git@github.com:exira/aws-s3-cache.git -c core.autocrlf=input```
+
+## Installation
 
 1)	Create a storage account in the same datacenter as your web site, if you do not have one already.
 
