@@ -6,17 +6,41 @@ open System.Text
 open System.Security.Cryptography
 open FSharp.Configuration
 open Exira.ErrorHandling
+open Amazon.S3
+open Amazon
+open Amazon.S3.Model
+open System.IO
+open Newtonsoft.Json
 
 type CacheConfig = YamlConfig<"Cache.yaml">
 
+type HeaderObject() =
+    member val name = "" with get,set
+    member val value = "" with get,set
+
 type AwsS3Cache() =
     let cacheConfig = CacheConfig()
+
+    let (|DateTime|_|) str =
+        match DateTime.TryParse str with
+        | true, dt -> Some(dt)
+        | _ -> None
+
+    let (|Int|_|) str =
+        match Int32.TryParse str with
+        | true, num -> Some(num)
+        | _ -> None
+
+    let (|Float|_|) str =
+        match Double.TryParse str with
+        | true, num -> Some(num)
+        | _ -> None
 
     let getMD5 (s: string) =
         use md5Obj = new MD5CryptoServiceProvider()
 
         md5Obj.ComputeHash(Encoding.ASCII.GetBytes(s))
-        |> Array.map (fun (x : byte) -> String.Format("{0:x2}", x))
+        |> Array.map (fun (x: byte) -> String.Format("{0:x2}", x))
         |> String.concat String.Empty
 
     // Only execute if the request is for a PHP file
@@ -81,9 +105,71 @@ type AwsS3Cache() =
                 key.Contains("wordpress_logged_in") || key.Contains(commentKey))
 
         match cookies with
-        | null -> succeed app
+        | null -> succeed (app, md5)
         | _ when checkLoggedInOrComment() -> fail "Should not be cached"
-        | _ -> succeed app
+        | _ -> succeed (app, md5)
+
+    let processCache (app: HttpApplication, md5: string) =
+        // TODO: Check if everything exists, type the Fail side and deal with it later
+        let bucketName = "bucketName"
+        let keyName = "keyName"
+        use client = new AmazonS3Client(RegionEndpoint.EUCentral1)
+        let request = GetObjectRequest(BucketName = bucketName, Key = keyName)
+        use response = client.GetObject request
+
+        // Check the TTL of the blob and delete it if it has expired
+        let checkExpiration (response: GetObjectResponse) =
+            let expirationInSeconds = response.Metadata.["CacheDuration"] |> float
+            match response.LastModified.AddSeconds(expirationInSeconds) with
+            | expiration when expiration < DateTime.UtcNow -> fail "Delete blob"
+            | _ -> succeed response
+
+        // Check Last Modified
+        let checkLastModified (response: GetObjectResponse) =
+            let modifiedSince = app.Request.Headers.["If-Modified-Since"]
+
+            match modifiedSince with
+            | null -> succeed response
+            | DateTime dt when dt.ToUniversalTime() >= response.LastModified -> fail "Send 403"
+            //'Set 304 status (not modified) and abort
+            //app.Context.Response.StatusCode = 304
+            //app.Context.Response.SuppressContent = True
+            //app.CompleteRequest()
+            | _ -> succeed response
+
+        // If we've gotten this far, then we both have something to serve from cache and need to serve it, so get it from blob storage
+        let checkContent (response: GetObjectResponse) =
+            use reader = new StreamReader(response.ResponseStream)
+            succeed (response, reader.ReadToEnd())
+
+        let checkMetaData (response: GetObjectResponse, content: string) =
+            if response.Metadata.Keys.Contains("Headers") then
+                succeed (app, response.LastModified, content, JsonConvert.DeserializeObject<List<HeaderObject>>(response.Metadata.["Headers"]) |> Seq.toList)
+            else
+                succeed (app, response.LastModified, content, [])
+
+        response
+        |> checkExpiration
+        |> bind checkLastModified
+        |> bind checkContent
+        |> bind checkMetaData
+
+    // TODO: Throw stuff into record types
+    let buildResponse (app: HttpApplication, lastModified: DateTime, content: string, headers: HeaderObject list) =
+        // Set last-modified
+        app.Context.Response.Cache.SetLastModified(lastModified)
+
+        // Set cache control max age to match remaining cache duration
+        // Dim CacheRemaining As TimeSpan = LastModified.UtcDateTime.AddSeconds(ThisBlob.Metadata("Projectnamicacheduration")) - DateTime.UtcNow
+        // app.Context.Response.Cache.SetMaxAge(CacheRemaining)
+        app.Context.Response.Cache.SetCacheability(HttpCacheability.Public)
+        app.Context.Response.Cache.SetMaxAge(TimeSpan(0, 5, 0))
+
+        // Set 200 status, MIME type, and write the blob contents to the response
+        app.Context.Response.StatusCode <- 200
+
+
+        succeed app
 
     let beginRequest source e =
         ()
@@ -91,14 +177,21 @@ type AwsS3Cache() =
     let resolveRequestCache (source: obj) e =
         let app = source :?> HttpApplication
 
-        let r =
+        let result =
             app
             |> checkExtension
             |> bind checkCacheByPass
             |> bind checkNoCache
             |> bind constructHash
             |> bind checkCookies
-        ()
+            |> bind processCache
+            |> bind buildResponse
+
+        match result with
+        | Success app ->
+            // Notify IIS we are done and to abort further operations
+            app.CompleteRequest()
+        | Failure _ -> ()
 
     interface IHttpModule with
         member this.Dispose() = ()

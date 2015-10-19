@@ -4,4 +4,7 @@ source https://nuget.org/api/v2
 nuget FSharp.Core
 nuget FSharp.Configuration
 nuget Exira.ErrorHandling
+nuget AWSSDK.S3
+nuget Newtonsoft.Json
+
 nuget WindowsAzure.Storage 4.3.0 framework: >= net45
