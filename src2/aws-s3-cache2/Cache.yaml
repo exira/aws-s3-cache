@@ -1,2 +1,14 @@
 Cache:
+    Extension: .php
     BypassKey: AwsS3CacheByPass
+
+    NoCache:
+        - /wp-admin/
+        - /wp-login.php
+        - /wp-cron.php
+        - /wp-comments-post.php
+        - /xmlrpc.php
+        - /wp-signup.php
+        - /wp-trackback.php
+        - /wp-links-opml.php
+        - /wp-blog-header.php

@@ -14,16 +14,15 @@ type AwsS3Cache() =
 
     // Only execute if the request is for a PHP file
     let checkExtension (app: HttpApplication) =
-        match app.Context.Request.Url.GetLeftPart(UriPartial.Path).EndsWith(".php") with
+        match app.Context.Request.Url.GetLeftPart(UriPartial.Path).EndsWith(cacheConfig.Cache.Extension) with
         | true -> succeed app
         | false -> fail "Invalid extension"
 
     // Test for Cache Loader
     let checkCacheByPass (app: HttpApplication) =
-        let byPassKey = cacheConfig.Cache.BypassKey.ToLowerInvariant()
         let userAgent = app.Context.Request.UserAgent.ToLowerInvariant()
 
-        match userAgent.Contains(byPassKey) with
+        match userAgent.Contains(cacheConfig.Cache.BypassKey) with
         | true -> fail "Bypass key provided"
         | false -> succeed app
 
@@ -31,21 +30,9 @@ type AwsS3Cache() =
     let checkNoCache (app: HttpApplication) =
         let url = app.Context.Request.Url.ToString().ToLower()
 
-        // List of URL parts which will never be cached
-        let noCache = [|
-            "/wp-admin/"
-            "/wp-login.php"
-            "/wp-cron.php"
-            "/wp-comments-post.php"
-            "/xmlrpc.php"
-            "/wp-signup.php"
-            "/wp-trackback.php"
-            "/wp-links-opml.php"
-            "/wp-blog-header.php"
-        |]
-
         let containsNoCache =
-            noCache |> Array.exists (fun x -> url.Contains(x))
+            cacheConfig.Cache.NoCache
+            |> Seq.exists (fun x -> url.Contains(x))
 
         match containsNoCache with
         | true -> fail "Should not be cached"
@@ -92,9 +79,7 @@ type AwsS3Cache() =
             |> String.concat System.String.Empty
 
         // Generate key based on the URL via MD5 hash
-        let md5 = getMD5 url
-
-        succeed (app, md5)
+        succeed (app, getMD5 url)
 
     // Check cookies and abort if either user is logged in or the Project Nami (WordPress) Plugin has set a commenter cookie on this user for this page
     let checkCookies (app: HttpApplication, md5: string) =
@@ -109,10 +94,8 @@ type AwsS3Cache() =
 
         match cookies with
         | null -> succeed app
-        | _ ->
-            match checkLoggedInOrComment() with
-            | false -> succeed app
-            | true -> fail "Should not be cached"
+        | _ when checkLoggedInOrComment() -> fail "Should not be cached"
+        | _ -> succeed app
 
     let beginRequest source e =
         ()
