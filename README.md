@@ -2,7 +2,7 @@
 
 ## Exira.AwsS3Cache
 
-Exira.AwsS3Cache is IIS module which reads cached objects from AWS S3 and quickly serves them to end users
+Exira.AwsS3Cache is an IIS module which reads cached objects from AWS S3 and quickly serves them to end users
 
 ### Cloning
 
