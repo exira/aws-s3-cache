@@ -29,11 +29,11 @@ let project = "Exira.AwsS3Cache"
 
 // Short summary of the project
 // (used as description in AssemblyInfo and as a short summary for NuGet package)
-let summary = "Exira.AwsS3Cache"
+let summary = "Exira.AwsS3Cache is IIS module which reads cached objects from AWS S3 and quickly serves them to end users"
 
 // Longer description of the project
 // (used as a description for NuGet package; line breaks are automatically cleaned up)
-let description = "Exira.AwsS3Cache"
+let description = "Exira.AwsS3Cache is IIS module which reads cached objects from AWS S3 and quickly serves them to end users"
 
 // List of author names (for NuGet package)
 let authors = [ "exira" ]

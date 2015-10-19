@@ -6,7 +6,7 @@ open System.Reflection
 [<assembly: AssemblyDescriptionAttribute("Exira.AwsS3Cache")>]
 [<assembly: AssemblyVersionAttribute("0.1.0")>]
 [<assembly: AssemblyFileVersionAttribute("0.1.0")>]
-[<assembly: AssemblyMetadataAttribute("githash","6599b5d4eeee7944369d480f7b3178d851023652")>]
+[<assembly: AssemblyMetadataAttribute("githash","bc85d596399b4a4abda24978d5ed46bee127513a")>]
 do ()
 
 module internal AssemblyVersionInformation =

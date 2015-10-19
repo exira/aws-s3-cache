@@ -19,7 +19,7 @@ let githubLink = "http://github.com/exira/aws-s3-cache"
 let info =
   [ "project-name", "aws-s3-cache"
     "project-author", "exira"
-    "project-summary", "Exira.AwsS3Cache"
+    "project-summary", "Exira.AwsS3Cache is IIS module which reads cached objects from AWS S3 and quickly serves them to end users"
     "project-github", githubLink
     "project-nuget", "http://nuget.org/packages/Exira.AwsS3Cache" ]
 
