@@ -1,4 +1,5 @@
 Cache:
+    Debug: true
     Extension: .php
     BypassKey: AwsS3CacheByPass
 

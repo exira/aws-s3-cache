@@ -15,25 +15,41 @@ open Newtonsoft.Json
 type CacheConfig = YamlConfig<"Cache.yaml">
 
 type HeaderObject() =
-    member val name = "" with get,set
-    member val value = "" with get,set
+    member val name = "" with get, set
+    member val value = "" with get, set
+
+type Error =
+    | InvalidExtension of string // Invalid extension
+    | ByPassKeyProvided // Bypass key provided
+    | DoNotCache // Should not be cached
+    | BlobExpired // Delete blob
+    | NotModified // Send 403
+
+type CacheRequest = {
+    Start: DateTime
+    Application: HttpApplication
+    Url: string option
+    Hash: string option
+}
+
+type CacheResult = {
+    Start: DateTime
+    Application: HttpApplication
+    Url: string
+    Hash: string
+    LastModified: DateTime
+    Content: string
+    Headers: HeaderObject list option
+}
 
 type AwsS3Cache() =
     let cacheConfig = CacheConfig()
 
-    let (|DateTime|_|) str =
-        match DateTime.TryParse str with
+    let mutable _start = DateTime.MinValue
+
+    let (|DateTime|_|) value =
+        match DateTime.TryParse value with
         | true, dt -> Some(dt)
-        | _ -> None
-
-    let (|Int|_|) str =
-        match Int32.TryParse str with
-        | true, num -> Some(num)
-        | _ -> None
-
-    let (|Float|_|) str =
-        match Double.TryParse str with
-        | true, num -> Some(num)
         | _ -> None
 
     let getMD5 (s: string) =
@@ -44,36 +60,36 @@ type AwsS3Cache() =
         |> String.concat String.Empty
 
     // Only execute if the request is for a PHP file
-    let checkExtension (app: HttpApplication) =
-        match app.Context.Request.Url.GetLeftPart(UriPartial.Path) with
-        | leftPart when leftPart.EndsWith(cacheConfig.Cache.Extension) -> succeed app
-        | _ -> fail "Invalid extension"
+    let checkExtension (data: CacheRequest) =
+        match data.Application.Context.Request.Url.GetLeftPart(UriPartial.Path) with
+        | leftPart when leftPart.EndsWith(cacheConfig.Cache.Extension) -> succeed data
+        | extension -> fail (InvalidExtension extension)
 
     // Test for Cache Loader
-    let checkCacheByPass (app: HttpApplication) =
-        match app.Context.Request.UserAgent.ToLowerInvariant() with
-        | userAgent when userAgent.Contains(cacheConfig.Cache.BypassKey) -> fail "Bypass key provided"
-        | _ -> succeed app
+    let checkCacheByPass (data: CacheRequest) =
+        match data.Application.Context.Request.UserAgent.ToLowerInvariant() with
+        | userAgent when userAgent.Contains(cacheConfig.Cache.BypassKey) -> fail ByPassKeyProvided
+        | _ -> succeed data
 
     // Test for Not Cached
-    let checkNoCache (app: HttpApplication) =
-        let url = app.Context.Request.Url.ToString().ToLower()
+    let checkNoCache (data: CacheRequest) =
+        let url = data.Application.Context.Request.Url.ToString().ToLower()
 
         cacheConfig.Cache.NoCache
         |> Seq.exists (fun x -> url.Contains(x))
         |>  function
-            | true -> fail "Should not be cached"
-            | false -> succeed app
+            | true -> fail DoNotCache
+            | false -> succeed data
 
     // Construct URL in the same manner as the Project Nami (WordPress) Plugin
-    let constructHash (app: HttpApplication) =
+    let constructHash (data: CacheRequest) =
         let scheme =
-            match app.Context.Request.IsSecureConnection with
+            match data.Application.Context.Request.IsSecureConnection with
             | true -> "https://"
             | false -> "http://"
 
-        let httpHost = app.Context.Request.ServerVariables.["HTTP_HOST"]
-        let requestUri = app.Context.Request.ServerVariables.["REQUEST_URI"]
+        let httpHost = data.Application.Context.Request.ServerVariables.["HTTP_HOST"]
+        let requestUri = data.Application.Context.Request.ServerVariables.["REQUEST_URI"]
         let url = sprintf "%s%s%s" scheme httpHost requestUri
         let url = Uri(url).GetLeftPart(UriPartial.Query)
 
@@ -87,33 +103,33 @@ type AwsS3Cache() =
             | userAgent when containsMobileUserAgent userAgent-> "|mobile"
             | _ -> String.Empty
 
-        let userAgent = app.Context.Request.ServerVariables.["HTTP_USER_AGENT"]
+        let userAgent = data.Application.Context.Request.ServerVariables.["HTTP_USER_AGENT"]
         let url = sprintf "%s%s" url (mobileSuffix userAgent)
 
         // Generate key based on the URL via MD5 hash
-        succeed (app, getMD5 url)
+        succeed { data with Url = Some url; Hash =  Some (getMD5 url) }
 
     // Check cookies and abort if either user is logged in or the Project Nami (WordPress) Plugin has set a commenter cookie on this user for this page
-    let checkCookies (app: HttpApplication, md5: string) =
-        let commentKey = sprintf "comment_post_key_%s" md5
-        let cookies = app.Context.Request.Cookies
+    let checkCookies (data: CacheRequest) =
+        let commentKey = sprintf "comment_post_key_%s" data.Hash.Value
+        let cookies = data.Application.Context.Request.Cookies
 
         let checkLoggedInOrComment() =
-            app.Context.Request.Cookies.AllKeys
+            data.Application.Context.Request.Cookies.AllKeys
             |> Array.exists (fun x ->
                 let key = x.ToLower()
                 key.Contains("wordpress_logged_in") || key.Contains(commentKey))
 
         match cookies with
-        | null -> succeed (app, md5)
-        | _ when checkLoggedInOrComment() -> fail "Should not be cached"
-        | _ -> succeed (app, md5)
+        | null -> succeed data
+        | _ when checkLoggedInOrComment() -> fail DoNotCache
+        | _ -> succeed data
 
-    let processCache (app: HttpApplication, md5: string) =
-        // TODO: Check if everything exists, type the Fail side and deal with it later
+    let processCache (data: CacheRequest) =
+        // TODO: Check if everything exists
         let bucketName = "bucketName"
         let keyName = "keyName"
-        use client = new AmazonS3Client(RegionEndpoint.EUCentral1)
+        use client = new AmazonS3Client()
         let request = GetObjectRequest(BucketName = bucketName, Key = keyName)
         use response = client.GetObject request
 
@@ -121,77 +137,145 @@ type AwsS3Cache() =
         let checkExpiration (response: GetObjectResponse) =
             let expirationInSeconds = response.Metadata.["CacheDuration"] |> float
             match response.LastModified.AddSeconds(expirationInSeconds) with
-            | expiration when expiration < DateTime.UtcNow -> fail "Delete blob"
+            | expiration when expiration < DateTime.UtcNow -> fail BlobExpired
             | _ -> succeed response
 
         // Check Last Modified
         let checkLastModified (response: GetObjectResponse) =
-            let modifiedSince = app.Request.Headers.["If-Modified-Since"]
+            let modifiedSince = data.Application.Request.Headers.["If-Modified-Since"]
 
             match modifiedSince with
             | null -> succeed response
-            | DateTime dt when dt.ToUniversalTime() >= response.LastModified -> fail "Send 403"
-            //'Set 304 status (not modified) and abort
-            //app.Context.Response.StatusCode = 304
-            //app.Context.Response.SuppressContent = True
-            //app.CompleteRequest()
+            | DateTime dt when dt.ToUniversalTime() >= response.LastModified -> fail NotModified
             | _ -> succeed response
 
         // If we've gotten this far, then we both have something to serve from cache and need to serve it, so get it from blob storage
         let checkContent (response: GetObjectResponse) =
             use reader = new StreamReader(response.ResponseStream)
-            succeed (response, reader.ReadToEnd())
+            let content = reader.ReadToEnd()
+
+            // If the blob is empty, delete it
+            if content.Trim().Length = 0 then fail BlobExpired
+            else succeed (response, content)
 
         let checkMetaData (response: GetObjectResponse, content: string) =
+            let cacheResult = {
+                CacheResult.Start = data.Start
+                Hash = data.Hash.Value
+                Url = data.Url.Value
+                Application = data.Application
+                LastModified = response.LastModified
+                Content = content
+                Headers = None
+            }
+
             if response.Metadata.Keys.Contains("Headers") then
-                succeed (app, response.LastModified, content, JsonConvert.DeserializeObject<List<HeaderObject>>(response.Metadata.["Headers"]) |> Seq.toList)
+                succeed { cacheResult with Headers = JsonConvert.DeserializeObject<List<HeaderObject>>(response.Metadata.["Headers"]) |> Seq.toList |> Some }
             else
-                succeed (app, response.LastModified, content, [])
+                succeed cacheResult
 
-        response
-        |> checkExpiration
-        |> bind checkLastModified
-        |> bind checkContent
-        |> bind checkMetaData
+        let deleteBlob() =
+            let deleteRequest = DeleteObjectRequest(BucketName = bucketName, Key = keyName);
+            client.DeleteObject deleteRequest
 
-    // TODO: Throw stuff into record types
-    let buildResponse (app: HttpApplication, lastModified: DateTime, content: string, headers: HeaderObject list) =
+        let cacheResult =
+            response
+            |> checkExpiration
+            |> bind checkLastModified
+            |> bind checkContent
+            |> bind checkMetaData
+
+        match cacheResult with
+        | Failure Error.BlobExpired ->
+            deleteBlob() |> ignore
+            cacheResult
+        | _ -> cacheResult
+
+    let addDebug (data: CacheResult) =
+        if cacheConfig.Cache.Debug then
+            let cacheStart = data.Start - _start
+            let cacheEnd = DateTime.Now - _start
+
+            // Insert debug data before the closing HEAD tag
+            let nl = Environment.NewLine
+            let rewrite = data.Application.Context.Request.Url.GetLeftPart(UriPartial.Query)
+            let debug =
+                sprintf
+                    "<!-- CacheStart %f CacheEnd %f -->%s<!-- Key %s ServerVar %s Rewrite %s -->%s</head>"
+                    cacheStart.TotalMilliseconds
+                    cacheEnd.TotalMilliseconds
+                    nl
+                    data.Hash
+                    data.Url
+                    rewrite
+                    nl
+
+            let content = data.Content.Replace("</head>", debug)
+
+            succeed { data with Content = content }
+        else
+            succeed data
+
+    let buildResponse (data: CacheResult) =
         // Set last-modified
-        app.Context.Response.Cache.SetLastModified(lastModified)
+        data.Application.Context.Response.Cache.SetLastModified data.LastModified
 
         // Set cache control max age to match remaining cache duration
         // Dim CacheRemaining As TimeSpan = LastModified.UtcDateTime.AddSeconds(ThisBlob.Metadata("Projectnamicacheduration")) - DateTime.UtcNow
         // app.Context.Response.Cache.SetMaxAge(CacheRemaining)
-        app.Context.Response.Cache.SetCacheability(HttpCacheability.Public)
-        app.Context.Response.Cache.SetMaxAge(TimeSpan(0, 5, 0))
+        data.Application.Context.Response.Cache.SetCacheability HttpCacheability.Public
+        data.Application.Context.Response.Cache.SetMaxAge(TimeSpan(0, 5, 0))
+
+        // Check for headers in metadata, write them if they exist
+        match data.Headers with
+        | Some headers ->
+            headers
+            |> List.iter (fun header -> data.Application.Context.Response.Headers.Add(header.name, header.value))
+        | None -> ()
 
         // Set 200 status, MIME type, and write the blob contents to the response
-        app.Context.Response.StatusCode <- 200
+        data.Application.Context.Response.StatusCode <- 200
+        data.Application.Context.Response.Write data.Content
+        data.Application.Context.Response.ContentType <- "text/html"
 
-
-        succeed app
+        succeed data.Application
 
     let beginRequest source e =
-        ()
+        // Record the startup time of the module
+        _start <- DateTime.Now
 
     let resolveRequestCache (source: obj) e =
-        let app = source :?> HttpApplication
+        let request = {
+            CacheRequest.Start = DateTime.Now
+            Application = source :?> HttpApplication
+            Url = None
+            Hash = None
+        }
 
-        let result =
-            app
-            |> checkExtension
-            |> bind checkCacheByPass
-            |> bind checkNoCache
-            |> bind constructHash
-            |> bind checkCookies
-            |> bind processCache
-            |> bind buildResponse
+        try
+            let result =
+                request
+                |> checkExtension
+                |> bind checkCacheByPass
+                |> bind checkNoCache
+                |> bind constructHash
+                |> bind checkCookies
+                |> bind processCache
+                |> bind addDebug
+                |> bind buildResponse
 
-        match result with
-        | Success app ->
-            // Notify IIS we are done and to abort further operations
-            app.CompleteRequest()
-        | Failure _ -> ()
+            match result with
+            | Success app ->
+                // Notify IIS we are done and to abort further operations
+                app.CompleteRequest()
+            | Failure Error.NotModified ->
+                // Set 304 status (not modified) and abort
+                request.Application.Context.Response.StatusCode <- 304
+                request.Application.Context.Response.SuppressContent <- true
+                request.Application.CompleteRequest()
+            | Failure _ -> ()
+        with
+        | ex -> ()
 
     interface IHttpModule with
         member this.Dispose() = ()
