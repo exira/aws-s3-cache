@@ -12,31 +12,34 @@ type CacheConfig = YamlConfig<"Cache.yaml">
 type AwsS3Cache() =
     let cacheConfig = CacheConfig()
 
+    let getMD5 (s: string) =
+        use md5Obj = new MD5CryptoServiceProvider()
+
+        md5Obj.ComputeHash(Encoding.ASCII.GetBytes(s))
+        |> Array.map (fun (x : byte) -> String.Format("{0:x2}", x))
+        |> String.concat String.Empty
+
     // Only execute if the request is for a PHP file
     let checkExtension (app: HttpApplication) =
-        match app.Context.Request.Url.GetLeftPart(UriPartial.Path).EndsWith(cacheConfig.Cache.Extension) with
-        | true -> succeed app
-        | false -> fail "Invalid extension"
+        match app.Context.Request.Url.GetLeftPart(UriPartial.Path) with
+        | leftPart when leftPart.EndsWith(cacheConfig.Cache.Extension) -> succeed app
+        | _ -> fail "Invalid extension"
 
     // Test for Cache Loader
     let checkCacheByPass (app: HttpApplication) =
-        let userAgent = app.Context.Request.UserAgent.ToLowerInvariant()
-
-        match userAgent.Contains(cacheConfig.Cache.BypassKey) with
-        | true -> fail "Bypass key provided"
-        | false -> succeed app
+        match app.Context.Request.UserAgent.ToLowerInvariant() with
+        | userAgent when userAgent.Contains(cacheConfig.Cache.BypassKey) -> fail "Bypass key provided"
+        | _ -> succeed app
 
     // Test for Not Cached
     let checkNoCache (app: HttpApplication) =
         let url = app.Context.Request.Url.ToString().ToLower()
 
-        let containsNoCache =
-            cacheConfig.Cache.NoCache
-            |> Seq.exists (fun x -> url.Contains(x))
-
-        match containsNoCache with
-        | true -> fail "Should not be cached"
-        | false -> succeed app
+        cacheConfig.Cache.NoCache
+        |> Seq.exists (fun x -> url.Contains(x))
+        |>  function
+            | true -> fail "Should not be cached"
+            | false -> succeed app
 
     // Construct URL in the same manner as the Project Nami (WordPress) Plugin
     let constructHash (app: HttpApplication) =
@@ -47,36 +50,21 @@ type AwsS3Cache() =
 
         let httpHost = app.Context.Request.ServerVariables.["HTTP_HOST"]
         let requestUri = app.Context.Request.ServerVariables.["REQUEST_URI"]
-        let userAgent = app.Context.Request.ServerVariables.["HTTP_USER_AGENT"]
+        let url = sprintf "%s%s%s" scheme httpHost requestUri
+        let url = Uri(url).GetLeftPart(UriPartial.Query)
 
         // If Project Nami (WordPress) thinks this is a mobile device, salt the URL to generate a different key
-        let mobileSuffix (userAgent: string) =
-            // List of mobile User Agent lookups from Project Nami (WordPress) vars.php
-            let mobileAgents = [|
-                "Mobile"
-                "Android"
-                "Silk/"
-                "Kindle"
-                "BlackBerry"
-                "Opera Mini"
-                "Opera Mobi"
-            |]
+        let mobileSuffix userAgent =
+            let containsMobileUserAgent (userAgent: string)  =
+                cacheConfig.Cache.MobileUserAgents |> Seq.exists (fun x -> userAgent.Contains(x))
 
             match userAgent with
             | null -> String.Empty
-            | _ when (mobileAgents |> Array.exists (fun x -> userAgent.Contains(x))) -> "|mobile"
+            | userAgent when containsMobileUserAgent userAgent-> "|mobile"
             | _ -> String.Empty
 
-        let url = sprintf "%s%s%s" scheme httpHost requestUri
-        let url = Uri(url).GetLeftPart(UriPartial.Query)
+        let userAgent = app.Context.Request.ServerVariables.["HTTP_USER_AGENT"]
         let url = sprintf "%s%s" url (mobileSuffix userAgent)
-
-        let getMD5 (s: string) =
-            let md5Obj = new MD5CryptoServiceProvider()
-
-            md5Obj.ComputeHash(Encoding.ASCII.GetBytes(s))
-            |> Array.map (fun (x : byte) -> System.String.Format("{0:X2}", x))
-            |> String.concat System.String.Empty
 
         // Generate key based on the URL via MD5 hash
         succeed (app, getMD5 url)

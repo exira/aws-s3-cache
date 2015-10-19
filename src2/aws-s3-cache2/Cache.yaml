@@ -2,6 +2,7 @@ Cache:
     Extension: .php
     BypassKey: AwsS3CacheByPass
 
+    # List of URL parts which will never be cached
     NoCache:
         - /wp-admin/
         - /wp-login.php
@@ -12,3 +13,13 @@ Cache:
         - /wp-trackback.php
         - /wp-links-opml.php
         - /wp-blog-header.php
+
+    # List of mobile User Agent lookups from Project Nami (WordPress) vars.php
+    MobileUserAgents:
+        - Mobile"
+        - Android"
+        - Silk/"
+        - Kindle"
+        - BlackBerry"
+        - Opera Mini"
+        - Opera Mobi"
