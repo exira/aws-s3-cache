@@ -8,7 +8,7 @@
     <ProjectGuid>54b42f56-ad84-4cea-a542-8296f483e43e</ProjectGuid>
     <OutputType>Library</OutputType>
     <RootNamespace>aws_s3_cache</RootNamespace>
-    <AssemblyName>aws-s3-cache</AssemblyName>
+    <AssemblyName>Exira.AwsS3Cache</AssemblyName>
     <TargetFrameworkVersion>v4.6</TargetFrameworkVersion>
     <Name>aws-s3-cache2</Name>
     <TargetFrameworkProfile />
@@ -21,7 +21,7 @@
     <OutputPath>bin\Debug\</OutputPath>
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <WarningLevel>3</WarningLevel>
-    <DocumentationFile>bin\Debug\aws-s3-cache.XML</DocumentationFile>
+    <DocumentationFile>bin\Debug\Exira.AwsS3Cache.xml</DocumentationFile>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
@@ -30,7 +30,7 @@
     <OutputPath>bin\Release\</OutputPath>
     <DefineConstants>TRACE</DefineConstants>
     <WarningLevel>3</WarningLevel>
-    <DocumentationFile>bin\Release\aws-s3-cache.XML</DocumentationFile>
+    <DocumentationFile>bin\Release\Exira.AwsS3Cache.xml</DocumentationFile>
   </PropertyGroup>
   <PropertyGroup>
     <MinimumVisualStudioVersion Condition="'$(MinimumVisualStudioVersion)' == ''">11</MinimumVisualStudioVersion>

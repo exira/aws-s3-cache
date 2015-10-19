@@ -16,6 +16,6 @@ copyright
 tags
     aws s3 f#
 summary
-    Exira.AwsS3Cache
+    Exira.AwsS3Cache is an IIS module which reads cached objects from AWS S3 and quickly serves them to end users
 description
-    Exira.AwsS3Cache
+    Exira.AwsS3Cache is an IIS module which reads cached objects from AWS S3 and quickly serves them to end users
