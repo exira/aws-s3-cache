@@ -1,1 +1,5 @@
-WindowsAzure.Storage
+FSharp.Core
+FSharp.Configuration
+Exira.ErrorHandling
+AWSSDK.S3
+Newtonsoft.Json
