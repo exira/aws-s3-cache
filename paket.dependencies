@@ -1,3 +1,7 @@
+redirects: on
 source https://nuget.org/api/v2
 
+nuget FSharp.Core
+nuget FSharp.Configuration
+nuget Exira.ErrorHandling
 nuget WindowsAzure.Storage 4.3.0 framework: >= net45

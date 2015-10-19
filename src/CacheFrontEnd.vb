@@ -19,15 +19,6 @@ Public Class CacheFrontEnd
     Dim CacheEndDT As DateTime = DateTime.MinValue 'End time of cache operations
     Dim ContentTypeFound As Boolean = False 'Track if Content-Type was found in headers
 
-    Public Sub Init(ByVal app As HttpApplication) Implements IHttpModule.Init
-        AddHandler app.BeginRequest, AddressOf Me.OnBeginRequest
-        AddHandler app.ResolveRequestCache, AddressOf Me.OnCacheRequest
-    End Sub
-
-    Public Sub Dispose() Implements IHttpModule.Dispose
-
-    End Sub
-
     Public Sub OnBeginRequest(ByVal s As Object, ByVal e As EventArgs)
         'Record the startup time of the module
         StartDT = DateTime.Now
@@ -39,52 +30,7 @@ Public Class CacheFrontEnd
         Try
             'Only execute if the request is for a PHP file
             If app.Context.Request.Url.GetLeftPart(UriPartial.Path).EndsWith(".php") Then
-                'Test for Cache Loader
-                If Not IsNothing(System.Configuration.ConfigurationManager.AppSettings("ProjectNamiBlobCache.BypassKey")) Then
-                    If app.Context.Request.UserAgent.ToLower.Contains(System.Configuration.ConfigurationManager.AppSettings("ProjectNamiBlobCache.BypassKey").ToLower) Then
-                        Exit Sub
-                    End If
-                End If
 
-                'Test for Not Cached
-                If IsNotCached(app.Context.Request.Url.ToString.ToLower) Then
-                    Exit Sub
-                End If
-
-                'Construct URL in the same manner as the Project Nami (WordPress) Plugin
-                Dim URL As String = ""
-                Dim scheme As String = ""
-                If app.Context.Request.IsSecureConnection Then
-                    scheme = "https://"
-                Else
-                    scheme = "http://"
-                End If
-                URL = scheme & app.Context.Request.ServerVariables("HTTP_HOST") & app.Context.Request.ServerVariables("REQUEST_URI")
-                Dim NewURI As New Uri(URL)
-                URL = NewURI.GetLeftPart(UriPartial.Query)
-
-                'Determine if the User Agent is available
-                If Not IsNothing(app.Context.Request.ServerVariables("HTTP_USER_AGENT")) Then
-                    'If Project Nami (WordPress) thinks this is a mobile device, salt the URL to generate a different key
-                    If wp_is_mobile(app.Context.Request.ServerVariables("HTTP_USER_AGENT")) Then
-                        URL &= "|mobile"
-                    End If
-                End If
-
-
-                'Generate key based on the URL via MD5 hash
-                Dim MD5Hash As String = getMD5Hash(URL)
-
-                'Check cookies and abort if either user is logged in or the Project Nami (WordPress) Plugin has set a commenter cookie on this user for this page
-                If Not IsNothing(app.Context.Request.Cookies) Then
-                    For Each ThisCookie As String In app.Context.Request.Cookies.AllKeys
-                        If Not IsNothing(ThisCookie) Then
-                            If ThisCookie.ToLower.Contains("wordpress_logged_in") Or ThisCookie.ToLower.Contains("comment_post_key_" & MD5Hash.ToLower) Then
-                                Exit Sub
-                            End If
-                        End If
-                    Next
-                End If
 
                 'Record the start time of cache operations
                 CacheStartDT = DateTime.Now
@@ -209,41 +155,6 @@ Public Class CacheFrontEnd
         End Try
     End Sub
 
-    Function getMD5Hash(ThisString As String) As String
-        Dim md5Obj As New MD5CryptoServiceProvider
-        Dim ResultBytes() As Byte = md5Obj.ComputeHash(System.Text.Encoding.ASCII.GetBytes(ThisString))
-        Dim StrResult As String = ""
-
-        Dim b As Byte
-        For Each b In ResultBytes
-            StrResult += b.ToString("x2")
-        Next
-        Return (StrResult)
-    End Function
-
-    Function wp_is_mobile(UserAgent As String) As Boolean
-        'List of mobile User Agent lookups from Project Nami (WordPress) vars.php
-        Dim MobileAgents() As String = {"Mobile", "Android", "Silk/", "Kindle", "BlackBerry", "Opera Mini", "Opera Mobi"}
-
-        'If the User Agent contains any of the array elements, return True
-        If MobileAgents.Any(Function(str) UserAgent.Contains(str)) Then
-            Return True
-        Else
-            Return False
-        End If
-
-    End Function
-
-    Function IsNotCached(url As String) As Boolean
-        'List of URL parts which will never be cached
-        Dim NotCached() As String = {"/wp-admin/", "/wp-login.php", "/wp-cron.php", "/wp-comments-post.php", "/xmlrpc.php", "/wp-signup.php", "/wp-trackback.php", "/wp-links-opml.php", "/wp-blog-header.php"}
-
-        If NotCached.Any(Function(str) url.Contains(str)) Then
-            Return True
-        Else
-            Return False
-        End If
-    End Function
 
     Sub HandleCacheMiss(ByRef app As HttpApplication)
         'Set 200 status, MIME type, and write the blob contents to the response

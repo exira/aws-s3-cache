@@ -1,6 +1,11 @@
+REDIRECTS: ON
 NUGET
   remote: https://nuget.org/api/v2
   specs:
+    Exira.ErrorHandling (0.1.31)
+      FSharp.Core
+    FSharp.Configuration (0.5.3)
+    FSharp.Core (4.0.0.1)
     Microsoft.Data.Edm (5.6.2) - framework: >= net45
     Microsoft.Data.OData (5.6.2) - framework: >= net45
       Microsoft.Data.Edm (5.6.2)
