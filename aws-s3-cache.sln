@@ -11,6 +11,11 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = ".paket", ".paket", "{19612E
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "project", "project", "{1ABCFF8A-6C45-4392-8EA8-2BCBDCBFE80B}"
 	ProjectSection(SolutionItems) = preProject
+		.gitattributes = .gitattributes
+		.gitignore = .gitignore
+		build.fsx = build.fsx
+		docs\tools\generate.fsx = docs\tools\generate.fsx
+		docs\content\index.fsx = docs\content\index.fsx
 		LICENSE.txt = LICENSE.txt
 		README.md = README.md
 		RELEASE_NOTES.md = RELEASE_NOTES.md
