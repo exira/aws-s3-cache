@@ -107,7 +107,7 @@ type AwsS3Cache() =
         let url = sprintf "%s%s" url (mobileSuffix userAgent)
 
         // Generate key based on the URL via MD5 hash
-        succeed { data with Url = Some url; Hash =  Some (getMD5 url) }
+        { data with Url = Some url; Hash =  Some (getMD5 url) }
 
     // Check cookies and abort if either user is logged in or the Project Nami (WordPress) Plugin has set a commenter cookie on this user for this page
     let checkCookies (data: CacheRequest) =
@@ -127,8 +127,8 @@ type AwsS3Cache() =
 
     let processCache (data: CacheRequest) =
         // TODO: Check if everything exists
-        let bucketName = "bucketName"
-        let keyName = "keyName"
+        let bucketName = "bucketName" // TODO: Configure bucketname
+        let keyName = "keyName" // TODO: Configure keyname
         use client = new AmazonS3Client()
         let request = GetObjectRequest(BucketName = bucketName, Key = keyName)
         use response = client.GetObject request
@@ -212,9 +212,9 @@ type AwsS3Cache() =
 
             let content = data.Content.Replace("</head>", debug)
 
-            succeed { data with Content = content }
+            { data with Content = content }
         else
-            succeed data
+            data
 
     let buildResponse (data: CacheResult) =
         // Set last-modified
@@ -238,7 +238,7 @@ type AwsS3Cache() =
         data.Application.Context.Response.Write data.Content
         data.Application.Context.Response.ContentType <- "text/html"
 
-        succeed data.Application
+        data.Application
 
     let beginRequest source e =
         // Record the startup time of the module
@@ -258,11 +258,11 @@ type AwsS3Cache() =
                 |> checkExtension
                 |> bind checkCacheByPass
                 |> bind checkNoCache
-                |> bind constructHash
+                |> map constructHash
                 |> bind checkCookies
                 |> bind processCache
-                |> bind addDebug
-                |> bind buildResponse
+                |> map addDebug
+                |> map buildResponse
 
             match result with
             | Success app ->
